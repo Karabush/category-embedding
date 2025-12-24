@@ -18,9 +18,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Show workspace root
-        run: ls -l .
   
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -38,8 +35,8 @@ jobs:
       - name: Build package
         run: python -m build .
       
-      - name: Show dist contents 
-        run: ls -l dist
+      - name: Inspect wheel metadata 
+        run: unzip -p dist/*.whl METADATA || echo "No METADATA found"
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.10.0
