@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "category-embedding"
+version = "0.1.0"
+description = "A Keras-based entity embedding encoder for tabular ML and GBM pipelines"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Danu Andries", email = "danu@andries.lu" }
+]
+keywords = [
+    'machine learning',
+    'deep learning',
+    'tabular data',
+    'categorical encoding',
+    'entity embeddings',
+    'category embeddings',
+    'neural encoder',
+    'keras',
+    'tensorflow',
+    'scikit-learn',
+    'sklearn transformer',
+    'feature engineering',
+    'gradient boosting',
+    'lightgbm',
+    'xgboost',
+    'embeddings for gbm',
+    'tabular embeddings',
+    'ml pipelines',
+    'optuna tuning',
+    'high-cardinality features',
+    'feature preprocessing',
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "numpy>=1.22",
+  "pandas>=1.5",
+  "scikit-learn>=1.2",
+  "tensorflow>=2.12",
+]
+[project.urls]
+Homepage = "https://github.com/Karabush/category-embedding"
+Repository = "https://github.com/Karabush/category-embedding"
