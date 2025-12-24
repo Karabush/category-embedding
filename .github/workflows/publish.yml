@@ -15,6 +15,10 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
 
+    defaults: 
+      run: 
+        working-directory: category-embedding
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,4 +49,4 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.10.0
         with: 
-          packages-dir: dist
+          packages-dir: category-embedding/dist
