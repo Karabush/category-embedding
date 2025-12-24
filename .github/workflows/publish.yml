@@ -2,7 +2,7 @@ name: Publish to PyPI
 
 on:
   push:
-    branches: 
+    branches:
       - main
     tags:
       - "v*"
@@ -15,14 +15,10 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
 
-    defaults: 
-      run: 
-        working-directory: category-embedding
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-  
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -32,17 +28,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install build
-      
-      - name: Clean old build artifacts 
+
+      - name: Clean old build artifacts
         run: rm -rf dist build *.egg-info
 
       - name: Build package
         run: python -m build .
-      
-      - name: Inspect wheel metadata 
+
+      - name: Inspect wheel metadata
         run: unzip -p dist/*.whl METADATA || echo "No METADATA found"
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.10.0
-        with: 
-          packages-dir: category-embedding/dist
+        with:
+          packages-dir: dist
