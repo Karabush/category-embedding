@@ -17,6 +17,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug directory 
+        run: ls -R .
+        
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
