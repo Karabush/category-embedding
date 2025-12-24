@@ -92,7 +92,7 @@ model = lgb.train(params, train_ds, num_boost_round=200)
 
 ## 🧠 Why Use Category Embedding?
 
-Traditional encoders (one-hot, target encoding, CatBoost encoding) struggle with:
+Traditional encoders struggle with:
 
 * high-cardinality categorical features
 * sparse interactions
@@ -112,6 +112,7 @@ This library gives you:
 ## ⚙️ API Overview
 
 CategoryEmbedding(...)
+
 Key parameters:
 
 * task: "regression" or "classification"
@@ -126,15 +127,19 @@ Key parameters:
 * val_set: optional (X_val, y_val) tuple for early stopping
 
 .fit(X, y)
+
 Trains the embedding model.
 
 .transform(X)
+
 Returns a DataFrame containing all learned embeddings and numeric features.
 
 .predict(X)
+
 Uses the neural head for tuning/evaluation.
 
 .get_feature_names_out()
+
 Returns the names of the output columns.
 
 ---
