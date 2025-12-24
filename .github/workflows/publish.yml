@@ -22,9 +22,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Show workspace root 
-        run: pwd
   
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -40,7 +37,6 @@ jobs:
         run: rm -rf dist build *.egg-info
 
       - name: Build package
-        working-directory: category-embedding
         run: python -m build .
       
       - name: Inspect wheel metadata 
