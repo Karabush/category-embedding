@@ -8,8 +8,7 @@ version = "0.1.1"
 description = "A Keras-based entity embedding encoder for tabular ML and GBM pipelines"
 readme = "README.md"
 requires-python = ">=3.9"
-license = "MIT" 
-license-files = ["LICENSE"]
+license = { file = "LICENSE" }
 authors = [
   { name = "Danu Andries", email = "danu@andries.lu" }
 ]
