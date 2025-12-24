@@ -15,6 +15,10 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: .
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,9 +36,6 @@ jobs:
 
       - name: Clean old build artifacts
         run: rm -rf dist build *.egg-info
-      
-      - name: Confirm pyproject exists
-        run: ls -l pyproject.toml
 
       - name: Build package
         run: python -m build .
