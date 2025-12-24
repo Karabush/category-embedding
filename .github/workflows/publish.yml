@@ -15,10 +15,6 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: .
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,8 +36,11 @@ jobs:
       - name: Build package
         run: python -m build .
 
+      - name: List wheel contents
+        run: unzip -l dist/*.whl
+
       - name: Inspect wheel metadata
-        run: unzip -p dist/*.whl METADATA || echo "No METADATA found"
+        run: unzip -p dist/*.whl "*/METADATA" || echo "No METADATA found"
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.10.0
