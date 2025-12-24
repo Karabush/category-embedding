@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=70.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "A Keras-based entity embedding encoder for tabular ML and GBM pipelines"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { file = "LICENSE" }
+license = "MIT" 
+license-files = ["LICENSE"]
 authors = [
   { name = "Danu Andries", email = "danu@andries.lu" }
 ]
@@ -35,19 +36,19 @@ keywords = [
     'high-cardinality features',
     'feature preprocessing',
 ]
-classifiers = [
-  "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: MIT License",
-  "Intended Audience :: Developers",
-  "Intended Audience :: Science/Research",
-  "Topic :: Scientific/Engineering :: Artificial Intelligence",
-]
+classifiers = [ 
+  "Programming Language :: Python :: 3", 
+  "Intended Audience :: Developers", 
+  "Intended Audience :: Science/Research", 
+  "Topic :: Scientific/Engineering :: Artificial Intelligence", 
+  ]
 dependencies = [
   "numpy>=1.22",
   "pandas>=1.5",
   "scikit-learn>=1.2",
   "tensorflow>=2.12",
 ]
+dynamic = []
 [project.urls]
 Homepage = "https://github.com/Karabush/category-embedding"
 Repository = "https://github.com/Karabush/category-embedding"

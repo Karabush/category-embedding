@@ -1,0 +1,15 @@
+LICENSE
+MANIFEST.in
+README.md
+pyproject.toml
+category_embedding/__init__.py
+category_embedding/encoder.py
+category_embedding/version.py
+category_embedding.egg-info/PKG-INFO
+category_embedding.egg-info/SOURCES.txt
+category_embedding.egg-info/dependency_links.txt
+category_embedding.egg-info/requires.txt
+category_embedding.egg-info/top_level.txt
+tests/test_encoder_basic.py
+tests/test_feature_names.py
+tests/test_hashing.py
