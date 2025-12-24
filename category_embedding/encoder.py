@@ -305,7 +305,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
     # scikit-learn API
     # ---------------------------------------------------------
 
-    def fit(self, X: ArrayLike, y: ArrayLike) -> "ModernEntityEmbeddingEncoder":
+    def fit(self, X: ArrayLike, y: ArrayLike) -> "CategoryEmbedding":
         """Fit the embedding encoder on the provided data.
 
         Parameters
