@@ -18,6 +18,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Show workspace root 
+        run: ls -R .
   
       - name: Set up Python
         uses: actions/setup-python@v5
