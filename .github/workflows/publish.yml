@@ -28,7 +28,7 @@ jobs:
           python -m pip install build
 
       - name: Build package
-        run: python -m build
+        run: python -m build category-embedding
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.10.0
