@@ -42,10 +42,7 @@ jobs:
       - name: Inspect wheel metadata
         run: unzip -p dist/*.whl "*/METADATA" || echo "No METADATA found"
 
-      - name: Copy dist into workspace root
-        run: cp -r dist/* .
-
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: .
+          packages-dir: dist
