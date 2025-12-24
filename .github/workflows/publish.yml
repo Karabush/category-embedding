@@ -32,3 +32,5 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@v1.10.0
+        with: 
+          packages-dir: category-embedding/dist
