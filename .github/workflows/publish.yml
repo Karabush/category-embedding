@@ -2,8 +2,6 @@ name: Publish to PyPI
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 
@@ -35,12 +33,6 @@ jobs:
 
       - name: Build package
         run: python -m build .
-
-      - name: List wheel contents
-        run: unzip -l dist/*.whl
-
-      - name: Inspect wheel metadata
-        run: unzip -p dist/*.whl "*/METADATA" || echo "No METADATA found"
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
