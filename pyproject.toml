@@ -48,6 +48,10 @@ dependencies = [
   "tensorflow>=2.12",
 ]
 dynamic = []
+
+[tool.setuptools.packages.find] 
+include = ["category_embedding"]
+
 [project.urls]
 Homepage = "https://github.com/Karabush/category-embedding"
 Repository = "https://github.com/Karabush/category-embedding"
