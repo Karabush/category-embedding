@@ -28,6 +28,14 @@ It is sklearn-compatible, deterministic, and production-ready.
 - **Residual MLP architecture**  
   LayerNorm + GELU + Dropout + skip connections for stable training.
 
+- **Automatic numeric feature scaling**  
+  Numeric columns are scaled using StandardScaler during training.  
+  You can choose whether the transformed output returns scaled or raw numeric values via `scaled_num_out`.
+
+- **Log-scaling of regression targets**  
+  For regression tasks, the target is automatically transformed using  
+  `log(y + 1e-6)` during training and inverse‑transformed during prediction.
+
 - **Supports regression and binary classification**  
   The neural head is used only for training/tuning; GBMs remain the final predictor.
 
@@ -61,7 +69,9 @@ pip install category-embedding
 
 ```python
 import pandas as pd
-import lightgbm as lgb
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from lightgbm import LGBMRegressor
 from category_embedding import CategoryEmbedding
 
 df = pd.DataFrame({
@@ -71,21 +81,31 @@ df = pd.DataFrame({
 })
 y = [10.5, 20.1, 15.3, 8.7, 18.0]
 
-enc = CategoryEmbedding(
-    task="regression",
-    categorical_cols=["country", "device"],
-    numeric_cols=["age"],
-    epochs=20,
-    batch_size=32,
+categorical = ["country", "device"]
+numeric = ["age"]
+
+# CategoryEmbedding acts as a transformer inside a sklearn pipeline
+preprocess = ColumnTransformer(
+    transformers=[
+        ("emb", CategoryEmbedding(
+            task="regression",
+            categorical_cols=categorical,
+            numeric_cols=numeric,
+            epochs=20,
+            batch_size=32,
+            scaled_num_out=True,   # return scaled numeric features
+        ), categorical + numeric)
+    ],
+    remainder="drop",
 )
 
-enc.fit(df, y)
-X_emb = enc.transform(df)
+model = Pipeline([
+    ("prep", preprocess),
+    ("lgbm", LGBMRegressor(n_estimators=300, learning_rate=0.05)),
+])
 
-train_ds = lgb.Dataset(X_emb, label=y)
-params = {"objective": "regression", "metric": "rmse"}
-
-model = lgb.train(params, train_ds, num_boost_round=200)
+model.fit(df, y)
+preds = model.predict(df)
 ```
 
 ---
@@ -106,58 +126,58 @@ This library gives you:
 * the simplicity and performance of GBMs
 * a clean sklearn interface
 * deterministic, production-ready behavior
+* automatic numeric scaling and target log-transforming for stable training
 
 ---
 
 ## ⚙️ API Overview
 
-CategoryEmbedding(...)
+### `CategoryEmbedding(...)`
 
-Key parameters:
+### Parameters
 
-* task: "regression" or "classification"
-* categorical_cols: list of categorical column names
-* numeric_cols: list of numeric column names
-* embedding_dims: optional list of per-column embedding sizes
-* hidden_units: width of each residual block
-* n_blocks: number of residual blocks
-* dropout_rate: dropout inside residual blocks
-* lr: learning rate
-* batch_size, epochs
-* val_set: optional (X_val, y_val) tuple for early stopping
+| Parameter | Type | Description |
+|----------|------|-------------|
+| **task** | `"regression"` or `"classification"` | Determines loss function and whether log-scaling is applied to the target. |
+| **categorical_cols** | list[str] | Names of categorical columns to embed. |
+| **numeric_cols** | list[str] | Names of numeric columns to include as inputs. |
+| **embedding_dims** | list[int] or None | Optional per-column embedding sizes. If None, smart defaults are used. |
+| **hidden_units** | int | Width of each residual MLP block. |
+| **n_blocks** | int | Number of residual blocks. |
+| **dropout_rate** | float | Dropout rate inside residual blocks and before output head. |
+| **l2_emb** | float | L2 regularization for embedding weights. |
+| **l2_dense** | float | L2 regularization for dense layers. |
+| **batch_size** | int | Training batch size. |
+| **epochs** | int | Maximum number of training epochs. |
+| **lr** | float | Learning rate for Adam optimizer. |
+| **random_state** | int | TensorFlow random seed. |
+| **verbose** | int | Verbosity passed to Keras `.fit()`. |
+| **patience** | int | Early stopping patience. |
+| **reduce_lr_factor** | float | LR reduction factor when validation loss plateaus. |
+| **reduce_lr_patience** | int | Patience before reducing LR. |
+| **val_set** | tuple(X_val, y_val) or None | Optional external validation set. |
+| **scaled_num_out** | bool | If True, `transform()` returns scaled numeric columns; otherwise raw numeric values. |
 
-.fit(X, y)
+### Methods
 
-Trains the embedding model.
+#### `.fit(X, y)`
+Trains the embedding model:
+- learns embeddings  
+- fits numeric scaler  
+- applies log-scaling to regression targets  
+- trains the neural model  
 
-.transform(X)
+#### `.transform(X)`
+Returns a DataFrame containing:
+- learned embeddings  
+- numeric features (scaled or raw depending on `scaled_num_out`)  
 
-Returns a DataFrame containing all learned embeddings and numeric features.
+#### `.predict(X)`
+Uses the neural head for tuning/evaluation.  
+For regression: automatically applies inverse log-transform.
 
-.predict(X)
-
-Uses the neural head for tuning/evaluation.
-
-.get_feature_names_out()
-
-Returns the names of the output columns.
-
----
-
-## 📊 Example: Using Embeddings with XGBoost
-
-```python
-import xgboost as xgb
-
-X_train_emb = enc.transform(X_train)
-X_test_emb = enc.transform(X_test)
-
-dtrain = xgb.DMatrix(X_train_emb, label=y_train)
-dtest = xgb.DMatrix(X_test_emb, label=y_test)
-
-params = {"objective": "reg:squarederror"}
-model = xgb.train(params, dtrain, num_boost_round=300)
-```
+#### `.get_feature_names_out()`
+Returns the names of all output columns.
 
 ---
 
@@ -167,6 +187,5 @@ machine learning, deep learning, tabular data, categorical encoding, entity embe
 ---
 
 ## 📄 License
-
 This project is licensed under the MIT License.
 See the LICENSE file for details.

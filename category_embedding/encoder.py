@@ -1,12 +1,11 @@
-from __future__ import annotations
-
-from typing import Iterable, List, Optional, Sequence, Tuple, Union
-
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
-
 import tensorflow as tf
+
+from __future__ import annotations
+from typing import Iterable, List, Optional, Sequence, Tuple, Union
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import StandardScaler
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers
 
@@ -124,7 +123,9 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         reduce_lr_factor: float = 0.5,
         reduce_lr_patience: int = 3,
         val_set: Optional[Tuple[ArrayLike, ArrayLike]] = None,
-    ) -> None:
+        scaled_num_out: bool = True,
+        ) -> None:
+        
         if task not in ("regression", "classification"):
             raise ValueError("task must be 'regression' or 'classification'")
 
@@ -146,11 +147,14 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         self.reduce_lr_factor = reduce_lr_factor
         self.reduce_lr_patience = reduce_lr_patience
         self.val_set = val_set
+        self.scaled_num_out = scaled_num_out
 
         self.model_: Optional[keras.Model] = None
         self.cat_maps_: dict[str, dict] = {}
         self.n_categories_: dict[str, int] = {}
         self._feature_names_out: Optional[List[str]] = None
+        self.num_scaler_: Optional[StandardScaler] = None
+        self._log_eps = 1e-6
 
     # ---------------------------------------------------------
     # Internal helpers
@@ -334,16 +338,35 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         if missing_num:
             raise ValueError(f"Missing numeric columns in X: {missing_num}")
 
-        self._fit_category_maps(X_df)
+        # Fit category maps 
+        self._fit_category_maps(X_df) 
+        
+        # Fit numeric scaler 
+        if self.numeric_cols: 
+            self.num_scaler_ = StandardScaler() 
+            num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32") 
+            self.num_scaler_.fit(num_arr) 
+            num_arr_scaled = self.num_scaler_.transform(num_arr) 
+        else: 
+            num_arr_scaled = None 
+        
+        # Log-scale target for regression 
+        if self.task == "regression": 
+            y_arr = np.log(y_arr + self._log_eps)
+        
+        # Build model
         self._build_model()
         assert self.model_ is not None, "Model was not built."
 
+        # Prepare categorical inputs
         cat_idx = self._transform_categories_to_indices(X_df)
         model_inputs: list[np.ndarray] = [cat_idx[col] for col in self.categorical_cols]
 
+        # Add numeric inputs
         if self.numeric_cols:
-            model_inputs.append(X_df[self.numeric_cols].to_numpy(dtype="float32"))
+            model_inputs.append(num_arr_scaled.astype("float32"))
 
+        # Callbacks
         callbacks: list[keras.callbacks.Callback] = [
             keras.callbacks.EarlyStopping(
                 monitor="val_loss",
@@ -364,12 +387,16 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             X_val_df = pd.DataFrame(X_val).copy()
             y_val_arr = np.asarray(y_val).astype("float32")
 
+            if self.task == "regression":
+                y_val_arr = np.log(y_val_arr + self._log_eps)
+
             cat_idx_val = self._transform_categories_to_indices(X_val_df)
-            val_inputs: list[np.ndarray] = [
-                cat_idx_val[col] for col in self.categorical_cols
-            ]
+            val_inputs= [cat_idx_val[col] for col in self.categorical_cols]
+            
             if self.numeric_cols:
-                val_inputs.append(X_val_df[self.numeric_cols].to_numpy(dtype="float32"))
+                num_val = X_val_df[self.numeric_cols].to_numpy(dtype="float32") 
+                num_val_scaled = self.num_scaler_.transform(num_val) 
+                val_inputs.append(num_val_scaled)
 
             self.model_.fit(
                 model_inputs,
@@ -417,14 +444,24 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             raise RuntimeError("The encoder must be fitted before calling predict().")
 
         X_df = pd.DataFrame(X).copy()
-        cat_idx = self._transform_categories_to_indices(X_df)
 
-        model_inputs: list[np.ndarray] = [cat_idx[col] for col in self.categorical_cols]
+        # Categorical 
+        cat_idx = self._transform_categories_to_indices(X_df) 
+        model_inputs = [cat_idx[col] for col in self.categorical_cols]
+
+        # Numeric (scaled)
         if self.numeric_cols:
-            model_inputs.append(X_df[self.numeric_cols].to_numpy(dtype="float32"))
+            num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32") 
+            num_arr_scaled = self.num_scaler_.transform(num_arr) 
+            model_inputs.append(num_arr_scaled)
 
-        preds = self.model_.predict(model_inputs, verbose=0)
-        return preds.ravel()
+        preds = self.model_.predict(model_inputs, verbose=0).ravel()
+
+        # Inverse log-transform for regression 
+        if self.task == "regression": 
+            preds = np.exp(preds) - self._log_eps
+
+        return preds
 
     def transform(self, X: ArrayLike) -> pd.DataFrame:
         """Transform input data into learned embedding space.
@@ -452,29 +489,37 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         X_df = pd.DataFrame(X).copy()
         cat_idx = self._transform_categories_to_indices(X_df)
 
-        emb_blocks: list[np.ndarray] = []
-        colnames: list[str] = []
+        emb_blocks = [] 
+        colnames = []
 
+        # Embeddings
         for col in self.categorical_cols:
             idx = cat_idx[col]
             emb_layer = self.model_.get_layer(f"{col}_embedding")
             emb_matrix = emb_layer.get_weights()[0]
 
             emb_blocks.append(emb_matrix[idx])
-
             dim = emb_matrix.shape[1]
             colnames.extend([f"{col}_emb_{i}" for i in range(dim)])
 
         cat_emb = np.concatenate(emb_blocks, axis=1)
 
+        # Numeric output (scaled or raw)
         if self.numeric_cols:
-            num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32")
-            full = np.concatenate([cat_emb, num_arr], axis=1)
+            if self.scaled_num_out:
+                num_arr = self.num_scaler_.transform(
+                    X_df[self.numeric_cols].to_numpy(dtype="float32")
+                    )
+            else:
+                num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32")
+            
+            full = np.concatenate([cat_emb, num_arr], axis=1) 
             colnames.extend(self.numeric_cols)
         else:
             full = cat_emb
 
         self._feature_names_out = colnames
+        
         return pd.DataFrame(full, columns=colnames)
 
     def get_feature_names_out(
