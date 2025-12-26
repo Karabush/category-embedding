@@ -45,7 +45,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
 
         - if ``n_cat <= 10``: ``dim = n_cat - 1`` (minimum 1)
         - else: ``dim = max(10, n_cat // 2)``
-        - in all cases: ``dim <= 50``.
+        - in all cases: ``dim <= 30``.
 
     hidden_units:
         Width of each residual MLP block. A single integer is used
@@ -166,16 +166,16 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
 
         - if ``n_cat <= 10``: ``dim = max(1, n_cat - 1)``
         - else: ``dim = max(10, n_cat // 2)``
-        - finally ``dim = min(dim, 50)``.
+        - finally ``dim = min(dim, 30)``.
 
         This heuristic keeps small-cardinality features compact while
-        giving larger ones more capacity without exceeding 50.
+        giving larger ones more capacity without exceeding 30.
         """
         if n_cat <= 10:
             dim = max(1, n_cat - 1)
         else:
             dim = max(10, n_cat // 2)
-        return min(dim, 50)
+        return min(dim, 30)
 
     def _fit_category_maps(self, X: pd.DataFrame) -> None:
         """Build category -> index mappings for each categorical column."""

@@ -17,7 +17,7 @@ It is sklearn-compatible, deterministic, and production-ready.
   Uses a simple, interpretable rule:  
   - If `n_cat ≤ 10`: `dim = n_cat - 1`  
   - Else: `dim = max(10, n_cat // 2)`  
-  - Always capped at **50**.
+  - Always capped at **30**.
 
 - **Per-column embedding dimension overrides**  
   Pass a list of integers to control embedding size manually.
