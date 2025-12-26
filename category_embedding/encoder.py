@@ -1,17 +1,16 @@
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from __future__ import annotations
 from typing import Iterable, List, Optional, Sequence, Tuple, Union
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import StandardScaler
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers
 
-
 ArrayLike = Union[np.ndarray, pd.Series, pd.DataFrame]
-
 
 class CategoryEmbedding(BaseEstimator, TransformerMixin):
     """Neural entity embedding encoder for categorical features.
