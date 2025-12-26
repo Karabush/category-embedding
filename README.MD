@@ -136,27 +136,27 @@ This library gives you:
 
 ### Parameters
 
-| Parameter | Type | Description |
-|----------|------|-------------|
-| **task** | `"regression"` or `"classification"` | Determines loss function and whether log-scaling is applied to the target. |
-| **categorical_cols** | list[str] | Names of categorical columns to embed. |
-| **numeric_cols** | list[str] | Names of numeric columns to include as inputs. |
-| **embedding_dims** | list[int] or None | Optional per-column embedding sizes. If None, smart defaults are used. |
-| **hidden_units** | int | Width of each residual MLP block. |
-| **n_blocks** | int | Number of residual blocks. |
-| **dropout_rate** | float | Dropout rate inside residual blocks and before output head. |
-| **l2_emb** | float | L2 regularization for embedding weights. |
-| **l2_dense** | float | L2 regularization for dense layers. |
-| **batch_size** | int | Training batch size. |
-| **epochs** | int | Maximum number of training epochs. |
-| **lr** | float | Learning rate for Adam optimizer. |
-| **random_state** | int | TensorFlow random seed. |
-| **verbose** | int | Verbosity passed to Keras `.fit()`. |
-| **patience** | int | Early stopping patience. |
-| **reduce_lr_factor** | float | LR reduction factor when validation loss plateaus. |
-| **reduce_lr_patience** | int | Patience before reducing LR. |
-| **val_set** | tuple(X_val, y_val) or None | Optional external validation set. |
-| **scaled_num_out** | bool | If True, `transform()` returns scaled numeric columns; otherwise raw numeric values. |
+| Parameter            | Type                               | Default      | Description                                                                 |
+|----------------------|------------------------------------|--------------|-----------------------------------------------------------------------------|
+| task                 | "regression" or "classification"   | "regression" | Determines loss function and whether log-scaling is applied to the target. |
+| categorical_cols     | list[str] or None                  | None         | Names of categorical columns to embed.                                      |
+| numeric_cols         | list[str] or None                  | None         | Names of numeric columns to include as inputs.                              |
+| embedding_dims       | list[int] or None                  | None         | Optional per-column embedding sizes. If None, smart defaults are used.      |
+| hidden_units         | int                                 | 64           | Width of each residual MLP block.                                           |
+| n_blocks             | int                                 | 2            | Number of residual blocks.                                                  |
+| dropout_rate         | float                               | 0.2          | Dropout rate inside residual blocks and before output head.                 |
+| l2_emb               | float                               | 1e-6         | L2 regularization for embedding weights.                                    |
+| l2_dense             | float                               | 1e-6         | L2 regularization for dense layers.                                         |
+| batch_size           | int                                 | 512          | Training batch size.                                                        |
+| epochs               | int                                 | 30           | Maximum number of training epochs.                                          |
+| lr                   | float                               | 2e-3         | Learning rate for Adam optimizer.                                           |
+| random_state         | int                                 | 42           | TensorFlow random seed.                                                     |
+| verbose              | int                                 | 1            | Verbosity passed to Keras `.fit()`.                                         |
+| patience             | int                                 | 4            | Early stopping patience.                                                    |
+| reduce_lr_factor     | float                               | 0.5          | LR reduction factor when validation loss plateaus.                          |
+| reduce_lr_patience   | int                                 | 2            | Patience before reducing LR.                                                |
+| val_set              | tuple(X_val, y_val) or None        | None         | Optional external validation set.                                           |
+| scaled_num_out       | bool                                | True         | If True, `transform()` returns scaled numeric columns; otherwise raw.       |
 
 ### Methods
 
