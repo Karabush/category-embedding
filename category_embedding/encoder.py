@@ -31,6 +31,8 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
     task:
         Task type. Either ``"regression"`` or ``"classification"``.
         Determines the loss and activation of the output head.
+    log_target : bool, default=False
+        Whether to apply a log transformation to the target variable for regression tasks.
     categorical_cols:
         Names of categorical columns in the input data.
     numeric_cols:
@@ -105,6 +107,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
     def __init__(
         self,
         task: str = "regression",
+        log_target: bool = False,
         categorical_cols: Optional[Sequence[str]] = None,
         numeric_cols: Optional[Sequence[str]] = None,
         embedding_dims: Optional[Sequence[int]] = None,
@@ -129,6 +132,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             raise ValueError("task must be 'regression' or 'classification'")
 
         self.task = task
+        self.log_target = log_target
         self.categorical_cols = list(categorical_cols or [])
         self.numeric_cols = list(numeric_cols or [])
         self.embedding_dims = list(embedding_dims) if embedding_dims is not None else None
@@ -350,7 +354,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             num_arr_scaled = None 
         
         # Log-scale target for regression 
-        if self.task == "regression": 
+        if self.task == "regression" and self.log_target:
             y_arr = np.log(y_arr + self._log_eps)
         
         # Build model
@@ -457,7 +461,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         preds = self.model_.predict(model_inputs, verbose=0).ravel()
 
         # Inverse log-transform for regression 
-        if self.task == "regression": 
+        if self.task == "regression" and self.log_target:
             preds = np.exp(preds) - self._log_eps
 
         return preds

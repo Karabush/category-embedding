@@ -32,9 +32,9 @@ It is sklearn-compatible, deterministic, and production-ready.
   Numeric columns are scaled using StandardScaler during training.  
   You can choose whether the transformed output returns scaled or raw numeric values via `scaled_num_out`.
 
-- **Log-scaling of regression targets**  
-  For regression tasks, the target is automatically transformed using  
-  `log(y + 1e-6)` during training and inverse‑transformed during prediction.
+- **Optional log-scaling of regression targets**  
+  For regression tasks, the target can be optionally transformed using `log(y + 1e-6)` during training 
+  (and inverse-transformed at prediction time) by setting `log_target=True`.
 
 - **Supports regression and binary classification**  
   The neural head is used only for training/tuning; GBMs remain the final predictor.
