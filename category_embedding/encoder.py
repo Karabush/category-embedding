@@ -390,7 +390,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             X_val_df = pd.DataFrame(X_val).copy()
             y_val_arr = np.asarray(y_val).astype("float32")
 
-            if self.task == "regression":
+            if self.task == "regression" and self.log_target:
                 y_val_arr = np.log(y_val_arr + self._log_eps)
 
             cat_idx_val = self._transform_categories_to_indices(X_val_df)

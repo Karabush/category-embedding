@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "category-embedding"
-version = "0.1.7"
+version = "0.1.8"
 description = "A Keras-based entity embedding encoder for tabular ML and GBM pipelines"
 readme = "README.MD"
 requires-python = ">=3.9"
