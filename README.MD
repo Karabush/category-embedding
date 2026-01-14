@@ -133,15 +133,17 @@ This library gives you:
 ## ⚙️ API Overview
 
 ### `CategoryEmbedding(...)`
-
+log_target : bool, default=False
+        Whether to apply a log transformation to the target variable for regression tasks.
 ### Parameters
 
 | Parameter            | Type                               | Default      | Description                                                                 |
 |----------------------|------------------------------------|--------------|-----------------------------------------------------------------------------|
-| task                 | "regression" or "classification"   | "regression" | Determines loss function and whether log-scaling is applied to the target. |
+| task                 | "regression" or "classification"   | "regression" | Determines loss function. |
+| log_target           | bool   | False | Whether to apply a log transformation to the target variable for regression tasks. |
 | categorical_cols     | list[str] or None                  | None         | Names of categorical columns to embed.                                      |
 | numeric_cols         | list[str] or None                  | None         | Names of numeric columns to include as inputs.                              |
-| embedding_dims       | list[int] or None                  | None         | Optional per-column embedding sizes. If None, smart defaults are used.      |
+| embedding_dims       | list[int] or None                  | None         | Optional list of integers specifying the embedding dimension for each categorical column, in the same order as `categorical_cols`. If `None`, a per-column default rule is used (if `n_cat <= 10`: `dim = n_cat - 1`, else: `dim = max(10, n_cat // 2)`, in all cases: `dim <= 30`. |
 | hidden_units         | int                                 | 64           | Width of each residual MLP block.                                           |
 | n_blocks             | int                                 | 2            | Number of residual blocks.                                                  |
 | dropout_rate         | float                               | 0.2          | Dropout rate inside residual blocks and before output head.                 |
