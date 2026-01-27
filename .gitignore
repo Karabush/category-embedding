@@ -1,1 +1,4 @@
 how_to_update_version.txt
+.vscode
+category_embedding/__pycache__/
+tests/__pycache__/
