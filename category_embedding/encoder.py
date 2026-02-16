@@ -333,6 +333,10 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         X_df = pd.DataFrame(X).copy()
         y_arr = np.asarray(y).astype("float32")
 
+        # Ensure y is 2D (n_samples, 1) to match model output shape
+        if len(y_arr.shape) == 1:
+            y_arr = y_arr.reshape(-1, 1)
+
         # Validate presence of required columns
         missing_cat = set(self.categorical_cols) - set(X_df.columns)
         missing_num = set(self.numeric_cols) - set(X_df.columns)
@@ -390,6 +394,9 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             X_val_df = pd.DataFrame(X_val).copy()
             y_val_arr = np.asarray(y_val).astype("float32")
 
+            if len(y_val_arr.shape) == 1:
+                y_val_arr = y_val_arr.reshape(-1, 1)
+                
             if self.task == "regression" and self.log_target:
                 y_val_arr = np.log(y_val_arr + self._log_eps)
 
