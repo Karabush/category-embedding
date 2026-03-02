@@ -22,15 +22,23 @@ It is sklearn-compatible, deterministic, and production-ready.
 - **Per-column embedding dimension overrides**  
   Pass a list of integers to control embedding size manually.
 
-- **Hashing for unseen categories**  
-  Unseen values at inference time are deterministically mapped into valid embedding indices.
+- **Robust categorical handling**  
+  - Missing values (`NaN`/`None`) → mapped to a dedicated `_MISSING_` token with its own trainable embedding.
+  - Unseen categories at inference → mapped to a separate `_UNKNOWN_` token with its own trainable embedding.
 
 - **Residual MLP architecture**  
   LayerNorm + GELU + Dropout + skip connections for stable training.
 
-- **Automatic numeric feature scaling**  
-  Numeric columns are scaled using StandardScaler during training.  
-  You can choose whether the transformed output returns scaled or raw numeric values via `scaled_num_out`.
+- **Flexible numeric feature output**  
+  Numeric columns are always imputed and scaled internally for stable neural training.
+  Use `numeric_output` to control what appears in `transform()` output:
+  - `'raw'` (default): Return original numeric values unchanged—ideal for GBMs.
+  - `'processed'`: Return imputed + scaled values—ideal for linear models.
+  - `None`: Return only categorical embeddings.
+
+- **Configurable numeric imputation**  
+  `num_imp_mode` chooses between `'mean'` or `'median'` for internal imputation.
+  If your data has no missing numeric values, this parameter has no effect.
 
 - **Optional log-scaling of regression targets**  
   For regression tasks, the target can be optionally transformed using `log(y + 1e-6)` during training 
@@ -93,7 +101,8 @@ preprocess = ColumnTransformer(
             numeric_cols=numeric,
             epochs=20,
             batch_size=32,
-            scaled_num_out=True,   # return scaled numeric features
+            numeric_output='raw',      # Return original numeric values for LightGBM
+            num_imp_mode='median',     # Internal imputation strategy (always applied)
         ), categorical + numeric)
     ],
     remainder="drop",
@@ -114,36 +123,37 @@ preds = model.predict(df)
 
 Traditional encoders struggle with:
 
-* high-cardinality categorical features
-* sparse interactions
-* noisy or rare categories
+* High-cardinality categorical features
+* Sparse interactions
+* Noisy or rare categories
+* Missing or unseen values at inference
 
 Neural embeddings solve this by learning dense, continuous representations that capture similarity structure between categories.
 
 This library gives you:
 
-* the power of deep learning
-* the simplicity and performance of GBMs
-* a clean sklearn interface
-* deterministic, production-ready behavior
-* automatic numeric scaling and target log-transforming for stable training
+* The power of deep learning
+* The simplicity and performance of GBMs as final predictors
+* A clean sklearn interface
+* Deterministic, production-ready behavior
+* Automatic handling of missing/unseen categoricals via dedicated trainable tokens
+* Flexible numeric output: raw values for trees, scaled for linear models, or embeddings-only
 
 ---
 
 ## ⚙️ API Overview
 
 ### `CategoryEmbedding(...)`
-log_target : bool, default=False
-        Whether to apply a log transformation to the target variable for regression tasks.
+
 ### Parameters
 
 | Parameter            | Type                               | Default      | Description                                                                 |
 |----------------------|------------------------------------|--------------|-----------------------------------------------------------------------------|
 | task                 | "regression" or "classification"   | "regression" | Determines loss function. |
-| log_target           | bool   | False | Whether to apply a log transformation to the target variable for regression tasks. |
+| log_target           | bool   | False | Whether to apply `log(y + 1e-6)` transformation to regression targets during training (inverse applied at prediction). |
 | categorical_cols     | list[str] or None                  | None         | Names of categorical columns to embed.                                      |
 | numeric_cols         | list[str] or None                  | None         | Names of numeric columns to include as inputs.                              |
-| embedding_dims       | list[int] or None                  | None         | Optional list of integers specifying the embedding dimension for each categorical column, in the same order as `categorical_cols`. If `None`, a per-column default rule is used (if `n_cat <= 10`: `dim = n_cat - 1`, else: `dim = max(10, n_cat // 2)`, in all cases: `dim <= 30`. |
+| embedding_dims       | list[int] or None                  | None         | Optional list of embedding dimensions for each categorical column (in order). If `None`, uses default rule: `n_cat≤10 → n_cat-1`, else `max(10, n_cat//2)`, capped at 30. |
 | hidden_units         | int                                 | 64           | Width of each residual MLP block.                                           |
 | n_blocks             | int                                 | 2            | Number of residual blocks.                                                  |
 | dropout_rate         | float                               | 0.2          | Dropout rate inside residual blocks and before output head.                 |
@@ -158,7 +168,8 @@ log_target : bool, default=False
 | reduce_lr_factor     | float                               | 0.5          | LR reduction factor when validation loss plateaus.                          |
 | reduce_lr_patience   | int                                 | 2            | Patience before reducing LR.                                                |
 | val_set              | tuple(X_val, y_val) or None        | None         | Optional external validation set.                                           |
-| scaled_num_out       | bool                                | True         | If True, `transform()` returns scaled numeric columns; otherwise raw.       |
+| num_imp_mode              | "mean" or "median"        | "median"         | Strategy for imputing missing numeric values internally during model training. Always applied for NN stability. If your data has no missing values, this is a no-op. Does not affect `transform()` output unless `numeric_output='processed'`.                                           |
+| numeric_output       | "raw", "processed", or None                                | "raw"         | Controls numeric features in transform() output: `"raw"` (default) - return original numeric values unchanged `"processed"` - return imputed + scaled values (same as used for training). `None` - exclude numeric features,return only categorical embeddings. Regardless of this setting, the internal model is always trained on imputed + scaled numerics for stability.       |
 
 ### Methods
 
@@ -184,7 +195,7 @@ Returns the names of all output columns.
 ---
 
 ## 🔑 Keywords
-machine learning, deep learning, tabular data, categorical encoding, entity embeddings, category embeddings, neural encoder, keras, tensorflow, scikit-learn, sklearn transformer, feature engineering, gradient boosting, lightgbm, xgboost, embeddings for gbm, high-cardinality features, optuna tuning, ml pipelines
+machine learning, deep learning, tabular data, categorical encoding, entity embeddings, category embeddings, neural encoder, keras, tensorflow, scikit-learn, sklearn transformer, feature engineering, gradient boosting, lightgbm, xgboost, embeddings for gbm, high-cardinality features, optuna tuning, ml pipelines, missing value handling, unseen category handling
 
 ---
 

@@ -4,9 +4,10 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from typing import Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Iterable, List, Optional, Sequence, Tuple, Union, Literal
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
 from tensorflow import keras
 from tensorflow.keras import layers, regularizers
 
@@ -28,78 +29,100 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
 
     Parameters
     ----------
-    task:
+    task : str, default="regression"
         Task type. Either ``"regression"`` or ``"classification"``.
         Determines the loss and activation of the output head.
     log_target : bool, default=False
         Whether to apply a log transformation to the target variable for regression tasks.
-    categorical_cols:
+    categorical_cols : Sequence[str], optional
         Names of categorical columns in the input data.
-    numeric_cols:
+    numeric_cols : Sequence[str], optional
         Names of numeric columns in the input data. These are passed
         through unchanged in the output of :meth:`transform` but are
         included as inputs when training the embedding model.
-    embedding_dims:
+    embedding_dims : Sequence[int], optional
         Optional list of integers specifying the embedding dimension
         for each categorical column, in the same order as
         ``categorical_cols``. If ``None``, a per-column default rule
-        is used:
-
-        - if ``n_cat <= 10``: ``dim = n_cat - 1`` (minimum 1)
-        - else: ``dim = max(10, n_cat // 2)``
-        - in all cases: ``dim <= 30``.
-
-    hidden_units:
-        Width of each residual MLP block. A single integer is used
-        for all blocks.
-    n_blocks:
+        is used (see ``_default_embedding_dim``).
+    hidden_units : int, default=64
+        Width of each residual MLP block.
+    n_blocks : int, default=2
         Number of residual MLP blocks applied after concatenating
         all embeddings and numeric features.
-    dropout_rate:
+    dropout_rate : float, default=0.2
         Dropout rate used inside residual blocks and before the
         output layer.
-    l2_emb:
+    l2_emb : float, default=1e-6
         L2 regularization strength applied to embedding weights.
-    l2_dense:
+    l2_dense : float, default=1e-6
         L2 regularization strength applied to dense weights in the
         residual blocks and output head.
-    batch_size:
+    batch_size : int, default=512
         Batch size used during training.
-    epochs:
+    epochs : int, default=30
         Maximum number of training epochs. Training may stop earlier
         due to early stopping.
-    lr:
+    lr : float, default=2e-3
         Learning rate for the Adam optimizer.
-    random_state:
-        Random seed used to seed TensorFlow. For full determinism,
-        users should also control NumPy and Python random seeds
-        externally.
-    verbose:
+    random_state : int, default=42
+        Random seed used to seed TensorFlow.
+    verbose : int, default=1
         Verbosity level passed to Keras ``Model.fit``.
-    patience:
+    patience : int, default=4
         Early stopping patience in epochs. Monitors validation loss.
-    reduce_lr_factor:
+    reduce_lr_factor : float, default=0.5
         Factor by which the learning rate is reduced when validation
         loss plateaus.
-    reduce_lr_patience:
+    reduce_lr_patience : int, default=2
         Number of epochs with no improvement after which the learning
         rate is reduced.
-    val_set:
+    val_set : tuple, optional
         Optional external validation set as a tuple ``(X_val, y_val)``.
         If provided, it is used as validation data in ``fit``. Otherwise
         an internal validation split of 0.2 is used.
+    num_imp_mode : {'mean', 'median'}, default='median'
+        Strategy for imputing missing numeric values *internally* during
+        model training. This does NOT affect the output of :meth:`transform`
+        unless ``numeric_output='processed'``.
+        
+        Note: If your numeric columns have no missing values (e.g., you
+        preprocessed them upstream), this parameter has no effect on the
+        data but imputation will still be applied (as a no-op).
+    numeric_output : {'raw', 'processed', None}, default='raw'
+        Controls which numeric features appear in the output of :meth:`transform`.
+        
+        - 'raw' (default): Return the original numeric values exactly as provided 
+          in the input to `transform()`, without imputation or scaling. Useful when 
+          downstream models (e.g., gradient-boosted trees) handle raw numerics well.
+        - 'processed': Return numeric features after imputation and scaling (the 
+          same preprocessing used internally to train the embeddings). Useful for 
+          linear models or when feature consistency is desired.
+        - None: Do not include any numeric features in the output; return only 
+          learned categorical embeddings.
+        
+        Note: Regardless of this setting, the internal embedding model is always 
+        trained on imputed and scaled numeric features for training stability. 
+        This parameter only affects the output of `transform()`, not the training 
+        of the embeddings themselves.
 
     Attributes
     ----------
-    model_:
+    model_ : keras.Model
         Fitted Keras model instance after calling :meth:`fit`.
-    cat_maps_:
+    cat_maps_ : dict[str, dict]
         Dictionary mapping each categorical column name to a dictionary
-        of category -> integer index.
-    n_categories_:
+        of category -> integer index. Index ``n_categories`` is reserved
+        for missing values ('_MISSING_'), index ``n_categories + 1`` is
+        reserved for unseen values ('_UNKNOWN_').
+    n_categories_ : dict[str, int]
         Dictionary mapping each categorical column name to its number
-        of categories seen during training.
-    _feature_names_out:
+        of *known* categories seen during training (excluding special tokens).
+    num_imputer_ : SimpleImputer
+        Fitted numeric imputer.
+    num_scaler_ : StandardScaler
+        Fitted numeric scaler.
+    _feature_names_out : list[str], optional
         List of feature names corresponding to columns produced by
         :meth:`transform`.
     """
@@ -125,11 +148,17 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         reduce_lr_factor: float = 0.5,
         reduce_lr_patience: int = 2,
         val_set: Optional[Tuple[ArrayLike, ArrayLike]] = None,
-        scaled_num_out: bool = True,
-        ) -> None:
+        num_imp_mode: Literal['mean', 'median'] = 'median',
+        numeric_output: Literal[None, 'raw', 'processed'] = 'raw',
+    ) -> None:
         
         if task not in ("regression", "classification"):
             raise ValueError("task must be 'regression' or 'classification'")
+        
+        if num_imp_mode not in ('mean', 'median'):
+            raise ValueError("num_imp_mode must be 'mean' or 'median'")
+        if numeric_output not in (None, 'raw', 'processed'):
+            raise ValueError("numeric_output must be None, 'raw', or 'processed'")
 
         self.task = task
         self.log_target = log_target
@@ -150,31 +179,25 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         self.reduce_lr_factor = reduce_lr_factor
         self.reduce_lr_patience = reduce_lr_patience
         self.val_set = val_set
-        self.scaled_num_out = scaled_num_out
+        self.num_imp_mode = num_imp_mode
+        self.numeric_output = numeric_output
 
         self.model_: Optional[keras.Model] = None
         self.cat_maps_: dict[str, dict] = {}
         self.n_categories_: dict[str, int] = {}
         self._feature_names_out: Optional[List[str]] = None
+        self.num_imputer_: Optional[SimpleImputer] = None
         self.num_scaler_: Optional[StandardScaler] = None
         self._log_eps = 1e-6
+        self._missing_token = '_MISSING_'
+        self._unknown_token = '_UNKNOWN_'
 
     # ---------------------------------------------------------
     # Internal helpers
     # ---------------------------------------------------------
 
     def _default_embedding_dim(self, n_cat: int) -> int:
-        """Compute default embedding dimension given cardinality.
-
-        For each categorical feature with ``n_cat`` distinct levels:
-
-        - if ``n_cat <= 10``: ``dim = max(1, n_cat - 1)``
-        - else: ``dim = max(10, n_cat // 2)``
-        - finally ``dim = min(dim, 30)``.
-
-        This heuristic keeps small-cardinality features compact while
-        giving larger ones more capacity without exceeding 30.
-        """
+        """Compute default embedding dimension given cardinality."""
         if n_cat <= 10:
             dim = max(1, n_cat - 1)
         else:
@@ -182,15 +205,27 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         return min(dim, 30)
 
     def _fit_category_maps(self, X: pd.DataFrame) -> None:
-        """Build category -> index mappings for each categorical column."""
+        """Build category -> index mappings for each categorical column.
+        
+        Missing values (NaN/None) are mapped to '_MISSING_' token.
+        Unseen categories at transform time are mapped to '_UNKNOWN_' token.
+        Both special tokens get their own trainable embeddings.
+        """
         self.cat_maps_ = {}
         self.n_categories_ = {}
 
         for col in self.categorical_cols:
-            cats = pd.Series(X[col].astype("category")).cat.categories
-            mapping = {cat: i for i, cat in enumerate(cats)}
+            # Get non-null unique categories
+            non_null_vals = X[col].dropna().astype(str).unique()
+            # Create mapping for known categories
+            mapping = {str(cat): i for i, cat in enumerate(sorted(non_null_vals))}
+            # Add special tokens - sequential indices
+            mapping[self._missing_token] = len(mapping)      # e.g., index 3
+            mapping[self._unknown_token] = len(mapping)      # e.g., index 4 (after _MISSING_ added)
+            
             self.cat_maps_[col] = mapping
-            self.n_categories_[col] = len(mapping)
+            # n_categories_ stores count of *known* categories only (excluding special tokens)
+            self.n_categories_[col] = len(non_null_vals)
 
         if self.embedding_dims is not None and len(self.embedding_dims) != len(
             self.categorical_cols
@@ -200,24 +235,32 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
                 f"({len(self.categorical_cols)}), got {len(self.embedding_dims)}"
             )
 
-    def _hash_unseen(self, value: object, n_cat: int) -> int:
-        """Hash unseen categories into a valid index [0, n_cat-1]."""
-        return hash(value) % n_cat
-
     def _transform_categories_to_indices(self, X: pd.DataFrame) -> dict[str, np.ndarray]:
-        """Convert categorical values to integer indices, hashing unseen values."""
+        """Convert categorical values to integer indices.
+        
+        - Missing values (NaN/None) → index for '_MISSING_' token
+        - Unseen categories → index for '_UNKNOWN_' token
+        - Known categories → their mapped index
+        """
         out: dict[str, np.ndarray] = {}
         for col in self.categorical_cols:
             mapping = self.cat_maps_[col]
-            n_cat = self.n_categories_[col]
-
-            out[col] = np.array(
-                [
-                    mapping[val] if val in mapping else self._hash_unseen(val, n_cat)
-                    for val in X[col]
-                ],
-                dtype="int32",
-            )
+            missing_idx = mapping[self._missing_token]
+            unknown_idx = mapping[self._unknown_token]
+            
+            def _map_value(val):
+                # Handle missing values
+                if pd.isna(val):
+                    return missing_idx
+                # Convert to string for consistent lookup
+                val_str = str(val)
+                # Known category
+                if val_str in mapping and val_str not in (self._missing_token, self._unknown_token):
+                    return mapping[val_str]
+                # Unseen category
+                return unknown_idx
+            
+            out[col] = np.array([_map_value(val) for val in X[col]], dtype="int32")
         return out
 
     def _residual_block(self, x: keras.Tensor, units: int, name_prefix: str) -> keras.Tensor:
@@ -248,15 +291,18 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
 
         # Embedding inputs
         for i, col in enumerate(self.categorical_cols):
-            n_cat = self.n_categories_[col]
+            n_known = self.n_categories_[col]
+            # Embedding input_dim = known categories + 2 (missing + unknown tokens)
+            input_dim = n_known + 2
+            
             if self.embedding_dims is not None:
                 emb_dim = self.embedding_dims[i]
             else:
-                emb_dim = self._default_embedding_dim(n_cat)
+                emb_dim = self._default_embedding_dim(n_known)
 
             inp = keras.Input(shape=(1,), name=f"{col}_input", dtype="int32")
             emb_layer = layers.Embedding(
-                input_dim=n_cat,
+                input_dim=input_dim,
                 output_dim=emb_dim,
                 name=f"{col}_embedding",
                 embeddings_regularizer=regularizers.l2(self.l2_emb),
@@ -313,31 +359,13 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
     # ---------------------------------------------------------
 
     def fit(self, X: ArrayLike, y: ArrayLike) -> "CategoryEmbedding":
-        """Fit the embedding encoder on the provided data.
-
-        Parameters
-        ----------
-        X:
-            Training features as a pandas DataFrame, NumPy array, or
-            compatible array-like. Must contain all columns listed in
-            ``categorical_cols`` and ``numeric_cols``.
-        y:
-            Target values for regression or binary classification.
-            Will be converted to a NumPy array of dtype float32.
-
-        Returns
-        -------
-        self:
-            Fitted encoder instance.
-        """
+        """Fit the embedding encoder on the provided data."""
         X_df = pd.DataFrame(X).copy()
         y_arr = np.asarray(y).astype("float32")
 
-        # Ensure y is 2D (n_samples, 1) to match model output shape
         if len(y_arr.shape) == 1:
             y_arr = y_arr.reshape(-1, 1)
 
-        # Validate presence of required columns
         missing_cat = set(self.categorical_cols) - set(X_df.columns)
         missing_num = set(self.numeric_cols) - set(X_df.columns)
         if missing_cat:
@@ -345,17 +373,20 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         if missing_num:
             raise ValueError(f"Missing numeric columns in X: {missing_num}")
 
-        # Fit category maps 
+        # Fit category maps (handles missing categoricals via _MISSING_ token)
         self._fit_category_maps(X_df) 
         
-        # Fit numeric scaler 
-        if self.numeric_cols: 
-            self.num_scaler_ = StandardScaler() 
-            num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32") 
-            self.num_scaler_.fit(num_arr) 
-            num_arr_scaled = self.num_scaler_.transform(num_arr) 
-        else: 
-            num_arr_scaled = None 
+        # Fit numeric imputer - always applied internally for NN stability
+        if self.numeric_cols:
+            self.num_imputer_ = SimpleImputer(strategy=self.num_imp_mode)
+            num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32")
+            num_arr_imputed = self.num_imputer_.fit_transform(num_arr)
+            
+            # Fit numeric scaler
+            self.num_scaler_ = StandardScaler()
+            num_arr_scaled = self.num_scaler_.fit_transform(num_arr_imputed)
+        else:
+            num_arr_scaled = None
         
         # Log-scale target for regression 
         if self.task == "regression" and self.log_target:
@@ -369,7 +400,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         cat_idx = self._transform_categories_to_indices(X_df)
         model_inputs: list[np.ndarray] = [cat_idx[col] for col in self.categorical_cols]
 
-        # Add numeric inputs
+        # Add numeric inputs (always scaled+imputed for training)
         if self.numeric_cols:
             model_inputs.append(num_arr_scaled.astype("float32"))
 
@@ -395,17 +426,18 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             y_val_arr = np.asarray(y_val).astype("float32")
 
             if len(y_val_arr.shape) == 1:
-                y_val_arr = y_val_arr.reshape(-1, 1)
+                y_val_arr = y_arr.reshape(-1, 1)
                 
             if self.task == "regression" and self.log_target:
                 y_val_arr = np.log(y_val_arr + self._log_eps)
 
             cat_idx_val = self._transform_categories_to_indices(X_val_df)
-            val_inputs= [cat_idx_val[col] for col in self.categorical_cols]
+            val_inputs = [cat_idx_val[col] for col in self.categorical_cols]
             
             if self.numeric_cols:
-                num_val = X_val_df[self.numeric_cols].to_numpy(dtype="float32") 
-                num_val_scaled = self.num_scaler_.transform(num_val) 
+                num_val = X_val_df[self.numeric_cols].to_numpy(dtype="float32")
+                num_val = self.num_imputer_.transform(num_val)
+                num_val_scaled = self.num_scaler_.transform(num_val)
                 val_inputs.append(num_val_scaled)
 
             self.model_.fit(
@@ -418,7 +450,6 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
                 callbacks=callbacks,
             )
         else:
-            # Internal validation split
             self.model_.fit(
                 model_inputs,
                 y_arr,
@@ -432,67 +463,30 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         return self
 
     def predict(self, X: ArrayLike) -> np.ndarray:
-        """Predict using the internal neural head (for tuning/evaluation).
-
-        This method is provided to support use cases such as
-        hyperparameter tuning of the encoder itself. In a typical
-        production setup, the downstream GBM model will be the
-        final predictor.
-
-        Parameters
-        ----------
-        X:
-            Input features as a pandas DataFrame, NumPy array, or
-            compatible array-like.
-
-        Returns
-        -------
-        preds:
-            Model predictions as a 1D NumPy array.
-        """
+        """Predict using the internal neural head (for tuning/evaluation)."""
         if self.model_ is None:
             raise RuntimeError("The encoder must be fitted before calling predict().")
 
         X_df = pd.DataFrame(X).copy()
 
-        # Categorical 
         cat_idx = self._transform_categories_to_indices(X_df) 
         model_inputs = [cat_idx[col] for col in self.categorical_cols]
 
-        # Numeric (scaled)
         if self.numeric_cols:
-            num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32") 
-            num_arr_scaled = self.num_scaler_.transform(num_arr) 
+            num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32")
+            num_arr = self.num_imputer_.transform(num_arr)
+            num_arr_scaled = self.num_scaler_.transform(num_arr)
             model_inputs.append(num_arr_scaled)
 
         preds = self.model_.predict(model_inputs, verbose=0).ravel()
 
-        # Inverse log-transform for regression 
         if self.task == "regression" and self.log_target:
             preds = np.exp(preds) - self._log_eps
 
         return preds
 
     def transform(self, X: ArrayLike) -> pd.DataFrame:
-        """Transform input data into learned embedding space.
-
-        The output contains, for each categorical column, its learned
-        embedding coordinates, plus all numeric features passed
-        through unchanged.
-
-        Parameters
-        ----------
-        X:
-            Input features as a pandas DataFrame, NumPy array, or
-            compatible array-like.
-
-        Returns
-        -------
-        embeddings:
-            A pandas DataFrame of shape (n_samples, n_features_out)
-            containing all concatenated embeddings and numeric
-            features, with informative column names.
-        """
+        """Transform input data into learned embedding space."""
         if self.model_ is None:
             raise RuntimeError("The encoder must be fitted before calling transform().")
 
@@ -514,14 +508,18 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
 
         cat_emb = np.concatenate(emb_blocks, axis=1)
 
-        # Numeric output (scaled or raw)
-        if self.numeric_cols:
-            if self.scaled_num_out:
-                num_arr = self.num_scaler_.transform(
-                    X_df[self.numeric_cols].to_numpy(dtype="float32")
-                    )
-            else:
+        # Handle numeric output based on parameter
+        if self.numeric_cols and self.numeric_output is not None:
+            if self.numeric_output == 'raw':
+                # Return original numeric values exactly as provided in X_df
                 num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32")
+            elif self.numeric_output == 'processed':
+                # Return imputed+scaled numerics (same as used for training)
+                num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32")
+                num_arr = self.num_imputer_.transform(num_arr)
+                num_arr = self.num_scaler_.transform(num_arr)
+            else:   
+                raise ValueError(f"Invalid numeric_output value: {self.numeric_output}")
             
             full = np.concatenate([cat_emb, num_arr], axis=1) 
             colnames.extend(self.numeric_cols)
@@ -535,14 +533,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
     def get_feature_names_out(
         self, input_features: Optional[Iterable[str]] = None
     ) -> np.ndarray:
-        """Get output feature names for ColumnTransformer compatibility.
-
-        Returns
-        -------
-        names:
-            A NumPy array of output feature names corresponding to the
-            columns produced by :meth:`transform`.
-        """
+        """Get output feature names for ColumnTransformer compatibility."""
         if self._feature_names_out is None:
             raise RuntimeError(
                 "Feature names are not available. Call transform() at least once "
