@@ -38,7 +38,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         Names of categorical columns in the input data.
     numeric_cols : Sequence[str], optional
         Names of numeric columns in the input data. These are passed
-        through unchanged in the output of :meth:`transform` but are
+        through unchanged in the output of `transform` but are
         included as inputs when training the embedding model.
     embedding_dims : Sequence[int], optional
         Optional list of integers specifying the embedding dimension
@@ -83,14 +83,14 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         an internal validation split of 0.2 is used.
     num_imp_mode : {'mean', 'median'}, default='median'
         Strategy for imputing missing numeric values *internally* during
-        model training. This does NOT affect the output of :meth:`transform`
+        model training. This does NOT affect the output of `transform`
         unless ``numeric_output='processed'``.
         
         Note: If your numeric columns have no missing values (e.g., you
         preprocessed them upstream), this parameter has no effect on the
         data but imputation will still be applied (as a no-op).
     numeric_output : {'raw', 'processed', None}, default='raw'
-        Controls which numeric features appear in the output of :meth:`transform`.
+        Controls which numeric features appear in the output of `transform`.
         
         - 'raw' (default): Return the original numeric values exactly as provided 
           in the input to `transform()`, without imputation or scaling. Useful when 
@@ -105,11 +105,23 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         trained on imputed and scaled numeric features for training stability. 
         This parameter only affects the output of `transform()`, not the training 
         of the embeddings themselves.
+    return_raw_categoricals : bool, default=False
+        If ``True``, include the original categorical column values (unencoded) 
+        in the output of `transform` alongside the learned embeddings. 
+        
+        This allows downstream GBM models to have both:
+        - **Embeddings**: Learned similarity signals (useful for rare/unseen categories)
+        - **Raw values**: Exact category matching (useful for frequent categories)
+        
+        Note: The raw categorical values are passed through unchanged—no encoding 
+        or imputation is applied. It is the user's responsibility to configure 
+        their GBM model appropriately (e.g., set ``categorical_feature`` in LightGBM) 
+        or preprocess these columns upstream if needed.
 
     Attributes
     ----------
     model_ : keras.Model
-        Fitted Keras model instance after calling :meth:`fit`.
+        Fitted Keras model instance after calling `fit`.
     cat_maps_ : dict[str, dict]
         Dictionary mapping each categorical column name to a dictionary
         of category -> integer index. Index ``n_categories`` is reserved
@@ -124,7 +136,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         Fitted numeric scaler.
     _feature_names_out : list[str], optional
         List of feature names corresponding to columns produced by
-        :meth:`transform`.
+        `transform`.
     """
 
     def __init__(
@@ -150,6 +162,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         val_set: Optional[Tuple[ArrayLike, ArrayLike]] = None,
         num_imp_mode: Literal['mean', 'median'] = 'median',
         numeric_output: Literal[None, 'raw', 'processed'] = 'raw',
+        return_raw_categoricals: bool = False,
     ) -> None:
         
         if task not in ("regression", "classification"):
@@ -159,6 +172,8 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             raise ValueError("num_imp_mode must be 'mean' or 'median'")
         if numeric_output not in (None, 'raw', 'processed'):
             raise ValueError("numeric_output must be None, 'raw', or 'processed'")
+        if not isinstance(return_raw_categoricals, bool):
+            raise ValueError("return_raw_categoricals must be a boolean")
 
         self.task = task
         self.log_target = log_target
@@ -181,6 +196,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         self.val_set = val_set
         self.num_imp_mode = num_imp_mode
         self.numeric_output = numeric_output
+        self.return_raw_categoricals = return_raw_categoricals
 
         self.model_: Optional[keras.Model] = None
         self.cat_maps_: dict[str, dict] = {}
@@ -511,20 +527,26 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         # Handle numeric output based on parameter
         if self.numeric_cols and self.numeric_output is not None:
             if self.numeric_output == 'raw':
-                # Return original numeric values exactly as provided in X_df
                 num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32")
-            elif self.numeric_output == 'processed':
-                # Return imputed+scaled numerics (same as used for training)
+            else:  # 'processed'
                 num_arr = X_df[self.numeric_cols].to_numpy(dtype="float32")
                 num_arr = self.num_imputer_.transform(num_arr)
                 num_arr = self.num_scaler_.transform(num_arr)
-            else:   
-                raise ValueError(f"Invalid numeric_output value: {self.numeric_output}")
             
             full = np.concatenate([cat_emb, num_arr], axis=1) 
             colnames.extend(self.numeric_cols)
         else:
             full = cat_emb
+
+        # Add raw categorical columns if requested
+        if self.return_raw_categoricals:
+            raw_cats = []
+            for col in self.categorical_cols:
+                raw_cats.append(X_df[[col]].to_numpy())
+                colnames.append(col)  # <-- Use original column name, not {col}_raw
+            
+            raw_cats_arr = np.concatenate(raw_cats, axis=1)
+            full = np.concatenate([full, raw_cats_arr], axis=1)
 
         self._feature_names_out = colnames
         

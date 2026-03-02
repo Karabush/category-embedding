@@ -56,6 +56,10 @@ It is sklearn-compatible, deterministic, and production-ready.
 - **Outputs a pandas DataFrame**  
   Perfect for LightGBM, XGBoost, CatBoost, or any sklearn model.
 
+- **Optional raw categorical passthrough**  
+  Use `return_raw_categoricals=True` to include original categorical values 
+  alongside embeddings. This gives GBMs both exact matching (for frequent 
+  categories) and similarity signals (for rare/unseen categories).
 ---
 
 ## 📦 Installation
@@ -149,27 +153,28 @@ This library gives you:
 
 | Parameter            | Type                               | Default      | Description                                                                 |
 |----------------------|------------------------------------|--------------|-----------------------------------------------------------------------------|
-| task                 | "regression" or "classification"   | "regression" | Determines loss function. |
-| log_target           | bool   | False | Whether to apply `log(y + 1e-6)` transformation to regression targets during training (inverse applied at prediction). |
-| categorical_cols     | list[str] or None                  | None         | Names of categorical columns to embed.                                      |
-| numeric_cols         | list[str] or None                  | None         | Names of numeric columns to include as inputs.                              |
-| embedding_dims       | list[int] or None                  | None         | Optional list of embedding dimensions for each categorical column (in order). If `None`, uses default rule: `n_cat≤10 → n_cat-1`, else `max(10, n_cat//2)`, capped at 30. |
-| hidden_units         | int                                 | 64           | Width of each residual MLP block.                                           |
-| n_blocks             | int                                 | 2            | Number of residual blocks.                                                  |
-| dropout_rate         | float                               | 0.2          | Dropout rate inside residual blocks and before output head.                 |
-| l2_emb               | float                               | 1e-6         | L2 regularization for embedding weights.                                    |
-| l2_dense             | float                               | 1e-6         | L2 regularization for dense layers.                                         |
-| batch_size           | int                                 | 512          | Training batch size.                                                        |
-| epochs               | int                                 | 30           | Maximum number of training epochs.                                          |
-| lr                   | float                               | 2e-3         | Learning rate for Adam optimizer.                                           |
-| random_state         | int                                 | 42           | TensorFlow random seed.                                                     |
-| verbose              | int                                 | 1            | Verbosity passed to Keras `.fit()`.                                         |
-| patience             | int                                 | 4            | Early stopping patience.                                                    |
-| reduce_lr_factor     | float                               | 0.5          | LR reduction factor when validation loss plateaus.                          |
-| reduce_lr_patience   | int                                 | 2            | Patience before reducing LR.                                                |
-| val_set              | tuple(X_val, y_val) or None        | None         | Optional external validation set.                                           |
-| num_imp_mode              | "mean" or "median"        | "median"         | Strategy for imputing missing numeric values internally during model training. Always applied for NN stability. If your data has no missing values, this is a no-op. Does not affect `transform()` output unless `numeric_output='processed'`.                                           |
-| numeric_output       | "raw", "processed", or None                                | "raw"         | Controls numeric features in transform() output: `"raw"` (default) - return original numeric values unchanged `"processed"` - return imputed + scaled values (same as used for training). `None` - exclude numeric features,return only categorical embeddings. Regardless of this setting, the internal model is always trained on imputed + scaled numerics for stability.       |
+| `task`                 | `"regression"` or `"classification"`  | `"regression"` | Determines loss function. |
+| `log_target`           | `bool`   | `False` | Whether to apply `log(y + 1e-6)` transformation to regression targets during training (inverse applied at prediction). |
+| `categorical_cols`     | `list[str]` or `None`                  | `None`         | Names of categorical columns to embed.                                      |
+| `numeric_cols`         | `list[str]` or `None`                  | `None`         | Names of numeric columns to include as inputs.                              |
+| `embedding_dims`       | `list[int]` or `None`                  | `None`         | Optional list of embedding dimensions for each categorical column (in order). If `None`, uses default rule: `n_cat≤10 → n_cat-1`, else `max(10, n_cat//2)`, capped at 30. |
+| `hidden_units`         | `int`                                 | 64           | Width of each residual MLP block.                                           |
+| `n_blocks`             | `int`                                 | 2            | Number of residual blocks.                                                  |
+| `dropout_rate`         | `float`                               | 0.2          | Dropout rate inside residual blocks and before output head.                 |
+| `l2_emb`               | `float`                               | 1e-6         | L2 regularization for embedding weights.                                    |
+| `l2_dense`             | `float`                               | 1e-6         | L2 regularization for dense layers.                                         |
+| `batch_size`           | `int`                                 | 512          | Training batch size.                                                        |
+| `epochs`               | `int`                                 | 30           | Maximum number of training epochs.                                          |
+| `lr`                   | `float`                               | 2e-3         | Learning rate for Adam optimizer.                                           |
+| `random_state`         | `int`                                 | 42           | TensorFlow random seed.                                                     |
+| `verbose`              | `int`                                 | 1            | Verbosity passed to Keras `.fit()`.                                         |
+| `patience`             | `int`                                 | 4            | Early stopping patience.                                                    |
+| `reduce_lr_factor`     | `float`                               | 0.5          | LR reduction factor when validation loss plateaus.                          |
+| `reduce_lr_patience`   | `int`                                 | 2            | Patience before reducing LR.                                                |
+| `val_set`              | `tuple(X_val, y_val)` or `None`        | `None`         | Optional external validation set.                                           |
+| `num_imp_mode`              | `"mean"` or `"median"`       | `"median"`        | Strategy for imputing missing numeric values internally during model training. Always applied for NN stability. If your data has no missing values, this is a no-op. Does not affect `transform()` output unless `numeric_output='processed'`.                                           |
+| `numeric_output`       | `"raw"`, `"processed"`, or `None`                                | `"raw"`         | Controls numeric features in transform() output: `"raw"` (default) - return original numeric values unchanged `"processed"` - return imputed + scaled values (same as used for training). `None` - exclude numeric features,return only categorical embeddings. Regardless of this setting, the internal model is always trained on imputed + scaled numerics for stability.       |
+| `return_raw_categoricals` | `bool` | `False` | If `True`, include original categorical column values (unencoded) in `transform()` output with original column names. Allows GBMs to use both embeddings and raw categories. User must configure GBM appropriately. |
 
 ### Methods
 
