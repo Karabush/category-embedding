@@ -117,6 +117,22 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         or imputation is applied. It is the user's responsibility to configure 
         their GBM model appropriately (e.g., set ``categorical_feature`` in LightGBM) 
         or preprocess these columns upstream if needed.
+    focal_gamma : float, optional, default=None
+        Focusing parameter for Focal Loss, used only when
+        ``task="classification"``. When set, Focal Loss replaces the
+        standard binary cross-entropy loss during training.
+
+        Focal Loss down-weights easy (majority class) examples and
+        concentrates the gradient signal on hard, uncertain ones,
+        producing better-calibrated embedding geometry for imbalanced
+        datasets.
+
+        - ``None`` (default): standard binary cross-entropy is used.
+        - ``> 0``: activates Focal Loss. Typical range is ``[0.5, 3.0]``;
+          start with ``1.0`` or ``2.0`` for moderate imbalance (e.g. 5:1–10:1).
+          Higher values increase focus on hard examples.
+
+        Raises ``ValueError`` if set alongside ``task="regression"``.
 
     Attributes
     ----------
@@ -163,17 +179,21 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         num_imp_mode: Literal['mean', 'median'] = 'median',
         numeric_output: Literal[None, 'raw', 'processed'] = 'raw',
         return_raw_categoricals: bool = False,
+        focal_gamma: Optional[float] = None,
     ) -> None:
         
         if task not in ("regression", "classification"):
             raise ValueError("task must be 'regression' or 'classification'")
-        
         if num_imp_mode not in ('mean', 'median'):
             raise ValueError("num_imp_mode must be 'mean' or 'median'")
         if numeric_output not in (None, 'raw', 'processed'):
             raise ValueError("numeric_output must be None, 'raw', or 'processed'")
         if not isinstance(return_raw_categoricals, bool):
             raise ValueError("return_raw_categoricals must be a boolean")
+        if focal_gamma is not None and task == "regression":
+            raise ValueError("focal_gamma is only supported for task='classification'. ")
+        if focal_gamma is not None and focal_gamma <= 0:
+            raise ValueError("focal_gamma must be a positive float")
 
         self.task = task
         self.log_target = log_target
@@ -197,6 +217,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         self.num_imp_mode = num_imp_mode
         self.numeric_output = numeric_output
         self.return_raw_categoricals = return_raw_categoricals
+        self.focal_gamma = focal_gamma
 
         self.model_: Optional[keras.Model] = None
         self.cat_maps_: dict[str, dict] = {}
@@ -279,6 +300,38 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             out[col] = np.array([_map_value(val) for val in X[col]], dtype="int32")
         return out
 
+    def _focal_loss(self, gamma: float):
+        """Return a Focal Loss function for binary classification.
+
+        Focal Loss = -(1 - p_t)^gamma * log(p_t)
+
+        Down-weights easy (majority) examples exponentially, concentrating
+        gradient updates on hard, uncertain minority class examples.
+        This produces better embedding geometry for imbalanced datasets
+        compared to standard binary cross-entropy.
+
+        Parameters
+        ----------
+        gamma : float
+            Focusing parameter. Higher values increase the down-weighting
+            of easy examples. gamma=0 recovers standard binary cross-entropy.
+        """
+        def focal_loss_fn(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+            y_pred = tf.clip_by_value(y_pred, 1e-7, 1.0 - 1e-7)
+            # Standard BCE per sample
+            bce = -(
+                y_true * tf.math.log(y_pred)
+                + (1.0 - y_true) * tf.math.log(1.0 - y_pred)
+            )
+            # p_t: probability of the true class
+            p_t = y_true * y_pred + (1.0 - y_true) * (1.0 - y_pred)
+            # Focal factor: (1 - p_t)^gamma suppresses easy examples
+            focal_factor = tf.pow(1.0 - p_t, gamma)
+            return tf.reduce_mean(focal_factor * bce)
+
+        focal_loss_fn.__name__ = f"focal_loss_gamma_{gamma}"
+        return focal_loss_fn
+
     def _residual_block(self, x: keras.Tensor, units: int, name_prefix: str) -> keras.Tensor:
         """Residual MLP block: LN -> Dense -> GELU -> Dropout -> Dense + skip."""
         input_dim = x.shape[-1]
@@ -354,19 +407,24 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         x = layers.LayerNormalization(name="final_ln")(x)
         x = layers.Dropout(self.dropout_rate, name="final_drop")(x)
 
-        # Output head for training (not used in transform)
+        # Output head
         if self.task == "regression":
             output = layers.Dense(1, activation="linear", name="output")(x)
             loss = "mse"
         else:
             output = layers.Dense(1, activation="sigmoid", name="output")(x)
-            loss = "binary_crossentropy"
+            # Use Focal Loss if focal_gamma is set, otherwise standard BCE
+            loss = (
+                self._focal_loss(self.focal_gamma)
+                if self.focal_gamma is not None
+                else "binary_crossentropy"
+            )
 
         model = keras.Model(inputs=inputs, outputs=output)
         model.compile(
             optimizer=keras.optimizers.Adam(self.lr),
             loss=loss,
-            metrics=[loss],
+            metrics=["binary_crossentropy" if self.task == "classification" else "mse"],
         )
         self.model_ = model
 
@@ -543,7 +601,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             raw_cats = []
             for col in self.categorical_cols:
                 raw_cats.append(X_df[[col]].to_numpy())
-                colnames.append(col)  # <-- Use original column name, not {col}_raw
+                colnames.append(col)
             
             raw_cats_arr = np.concatenate(raw_cats, axis=1)
             full = np.concatenate([full, raw_cats_arr], axis=1)

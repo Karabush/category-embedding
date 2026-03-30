@@ -44,6 +44,12 @@ It is sklearn-compatible, deterministic, and production-ready.
   For regression tasks, the target can be optionally transformed using `log(y + 1e-6)` during training 
   (and inverse-transformed at prediction time) by setting `log_target=True`.
 
+- **Imbalance-aware training via Focal Loss**  
+  For binary classification tasks, set `focal_gamma` to replace standard binary cross-entropy with
+  Focal Loss. This down-weights easy majority-class examples and concentrates gradient updates on
+  hard, uncertain minority-class examples — producing better embedding geometry when class
+  distributions are skewed. The stronger the imbalance, the more this matters for downstream GBM quality.
+
 - **Supports regression and binary classification**  
   The neural head is used only for training/tuning; GBMs remain the final predictor.
 
@@ -60,6 +66,7 @@ It is sklearn-compatible, deterministic, and production-ready.
   Use `return_raw_categoricals=True` to include original categorical values 
   alongside embeddings. This gives GBMs both exact matching (for frequent 
   categories) and similarity signals (for rare/unseen categories).
+
 ---
 
 ## 📦 Installation
@@ -121,6 +128,42 @@ model.fit(df, y)
 preds = model.predict(df)
 ```
 
+### Binary classification with imbalanced data
+
+For classification tasks with skewed class distributions, set `focal_gamma` to activate Focal Loss.
+This shapes the embedding space to better represent the minority class, which directly benefits
+the downstream GBM:
+
+```python
+from lightgbm import LGBMClassifier
+
+preprocess = ColumnTransformer(
+    transformers=[
+        ("emb", CategoryEmbedding(
+            task="classification",
+            categorical_cols=categorical,
+            numeric_cols=numeric,
+            epochs=30,
+            batch_size=256,
+            focal_gamma=2.0,           # Activate Focal Loss for imbalanced data
+            numeric_output='raw',
+        ), categorical + numeric)
+    ],
+    remainder="drop",
+)
+
+model = Pipeline([
+    ("prep", preprocess),
+    ("lgbm", LGBMClassifier(n_estimators=300, scale_pos_weight=pos_weight)),
+])
+
+model.fit(df, y)
+```
+
+> **Tip:** a `focal_gamma` in the range `[1.0, 2.0]` works well for moderate imbalance (5:1–10:1).
+> For more extreme ratios, consider values up to `3.0`. The GBM's own imbalance handling
+> (e.g. `scale_pos_weight` in LightGBM) remains complementary and should still be set.
+
 ---
 
 ## 🧠 Why Use Category Embedding?
@@ -142,6 +185,7 @@ This library gives you:
 * Deterministic, production-ready behavior
 * Automatic handling of missing/unseen categoricals via dedicated trainable tokens
 * Flexible numeric output: raw values for trees, scaled for linear models, or embeddings-only
+* Imbalance-aware embeddings via Focal Loss for binary classification
 
 ---
 
@@ -151,30 +195,31 @@ This library gives you:
 
 ### Parameters
 
-| Parameter            | Type                               | Default      | Description                                                                 |
-|----------------------|------------------------------------|--------------|-----------------------------------------------------------------------------|
-| `task`                 | `"regression"` or `"classification"`  | `"regression"` | Determines loss function. |
-| `log_target`           | `bool`   | `False` | Whether to apply `log(y + 1e-6)` transformation to regression targets during training (inverse applied at prediction). |
-| `categorical_cols`     | `list[str]` or `None`                  | `None`         | Names of categorical columns to embed.                                      |
-| `numeric_cols`         | `list[str]` or `None`                  | `None`         | Names of numeric columns to include as inputs.                              |
-| `embedding_dims`       | `list[int]` or `None`                  | `None`         | Optional list of embedding dimensions for each categorical column (in order). If `None`, uses default rule: `n_cat≤10 → n_cat-1`, else `max(10, n_cat//2)`, capped at 30. |
-| `hidden_units`         | `int`                                 | 64           | Width of each residual MLP block.                                           |
-| `n_blocks`             | `int`                                 | 2            | Number of residual blocks.                                                  |
-| `dropout_rate`         | `float`                               | 0.2          | Dropout rate inside residual blocks and before output head.                 |
-| `l2_emb`               | `float`                               | 1e-6         | L2 regularization for embedding weights.                                    |
-| `l2_dense`             | `float`                               | 1e-6         | L2 regularization for dense layers.                                         |
-| `batch_size`           | `int`                                 | 512          | Training batch size.                                                        |
-| `epochs`               | `int`                                 | 30           | Maximum number of training epochs.                                          |
-| `lr`                   | `float`                               | 2e-3         | Learning rate for Adam optimizer.                                           |
-| `random_state`         | `int`                                 | 42           | TensorFlow random seed.                                                     |
-| `verbose`              | `int`                                 | 1            | Verbosity passed to Keras `.fit()`.                                         |
-| `patience`             | `int`                                 | 4            | Early stopping patience.                                                    |
-| `reduce_lr_factor`     | `float`                               | 0.5          | LR reduction factor when validation loss plateaus.                          |
-| `reduce_lr_patience`   | `int`                                 | 2            | Patience before reducing LR.                                                |
-| `val_set`              | `tuple(X_val, y_val)` or `None`        | `None`         | Optional external validation set.                                           |
-| `num_imp_mode`              | `"mean"` or `"median"`       | `"median"`        | Strategy for imputing missing numeric values internally during model training. Always applied for NN stability. If your data has no missing values, this is a no-op. Does not affect `transform()` output unless `numeric_output='processed'`.                                           |
-| `numeric_output`       | `"raw"`, `"processed"`, or `None`                                | `"raw"`         | Controls numeric features in transform() output: `"raw"` (default) - return original numeric values unchanged `"processed"` - return imputed + scaled values (same as used for training). `None` - exclude numeric features,return only categorical embeddings. Regardless of this setting, the internal model is always trained on imputed + scaled numerics for stability.       |
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `task` | `"regression"` or `"classification"` | `"regression"` | Determines loss function. |
+| `log_target` | `bool` | `False` | Whether to apply `log(y + 1e-6)` transformation to regression targets during training (inverse applied at prediction). |
+| `categorical_cols` | `list[str]` or `None` | `None` | Names of categorical columns to embed. |
+| `numeric_cols` | `list[str]` or `None` | `None` | Names of numeric columns to include as inputs. |
+| `embedding_dims` | `list[int]` or `None` | `None` | Optional list of embedding dimensions for each categorical column (in order). If `None`, uses default rule: `n_cat≤10 → n_cat-1`, else `max(10, n_cat//2)`, capped at 30. |
+| `hidden_units` | `int` | 64 | Width of each residual MLP block. |
+| `n_blocks` | `int` | 2 | Number of residual blocks. |
+| `dropout_rate` | `float` | 0.2 | Dropout rate inside residual blocks and before output head. |
+| `l2_emb` | `float` | 1e-6 | L2 regularization for embedding weights. |
+| `l2_dense` | `float` | 1e-6 | L2 regularization for dense layers. |
+| `batch_size` | `int` | 512 | Training batch size. |
+| `epochs` | `int` | 30 | Maximum number of training epochs. |
+| `lr` | `float` | 2e-3 | Learning rate for Adam optimizer. |
+| `random_state` | `int` | 42 | TensorFlow random seed. |
+| `verbose` | `int` | 1 | Verbosity passed to Keras `.fit()`. |
+| `patience` | `int` | 4 | Early stopping patience. |
+| `reduce_lr_factor` | `float` | 0.5 | LR reduction factor when validation loss plateaus. |
+| `reduce_lr_patience` | `int` | 2 | Patience before reducing LR. |
+| `val_set` | `tuple(X_val, y_val)` or `None` | `None` | Optional external validation set. |
+| `num_imp_mode` | `"mean"` or `"median"` | `"median"` | Strategy for imputing missing numeric values internally during model training. Always applied for NN stability. If your data has no missing values, this is a no-op. Does not affect `transform()` output unless `numeric_output='processed'`. |
+| `numeric_output` | `"raw"`, `"processed"`, or `None` | `"raw"` | Controls numeric features in `transform()` output: `"raw"` (default) returns original numeric values unchanged; `"processed"` returns imputed + scaled values (same as used for training); `None` excludes numeric features and returns only categorical embeddings. Regardless of this setting, the internal model is always trained on imputed + scaled numerics for stability. |
 | `return_raw_categoricals` | `bool` | `False` | If `True`, include original categorical column values (unencoded) in `transform()` output with original column names. Allows GBMs to use both embeddings and raw categories. User must configure GBM appropriately. |
+| `focal_gamma` | `float` or `None` | `None` | Focusing parameter for Focal Loss. Only valid when `task="classification"`. When set, replaces binary cross-entropy with Focal Loss, which down-weights easy majority-class examples and focuses gradient updates on hard minority-class examples. This produces better embedding geometry for imbalanced datasets. Typical range: `[0.5, 3.0]`; start with `1.0`–`2.0` for moderate imbalance (5:1–10:1). Raises `ValueError` if set alongside `task="regression"` or if `≤ 0`. |
 
 ### Methods
 
@@ -183,12 +228,12 @@ Trains the embedding model:
 - learns embeddings  
 - fits numeric scaler  
 - applies log-scaling to regression targets  
-- trains the neural model  
+- trains the neural model with BCE or Focal Loss depending on `focal_gamma`
 
 #### `.transform(X)`
 Returns a DataFrame containing:
 - learned embeddings  
-- numeric features (scaled or raw depending on `scaled_num_out`)  
+- numeric features (scaled or raw depending on `numeric_output`)  
 
 #### `.predict(X)`
 Uses the neural head for tuning/evaluation.  
@@ -200,7 +245,7 @@ Returns the names of all output columns.
 ---
 
 ## 🔑 Keywords
-machine learning, deep learning, tabular data, categorical encoding, entity embeddings, category embeddings, neural encoder, keras, tensorflow, scikit-learn, sklearn transformer, feature engineering, gradient boosting, lightgbm, xgboost, embeddings for gbm, high-cardinality features, optuna tuning, ml pipelines, missing value handling, unseen category handling
+machine learning, deep learning, tabular data, categorical encoding, entity embeddings, category embeddings, neural encoder, keras, tensorflow, scikit-learn, sklearn transformer, feature engineering, gradient boosting, lightgbm, xgboost, embeddings for gbm, high-cardinality features, optuna tuning, ml pipelines, missing value handling, unseen category handling, imbalanced classification, focal loss
 
 ---
 
