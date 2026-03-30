@@ -330,7 +330,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             # Focal factor: (1 - p_t)^gamma suppresses easy examples
             focal_factor = tf.pow(1.0 - p_t, gamma)
 
-            return tf.cast(tf.reduce_mean(focal_factor * bce), tf.float32)
+            return tf.reshape(tf.reduce_mean(focal_factor * bce), ())
 
         focal_loss_fn.__name__ = f"focal_loss_gamma_{gamma}"
 
