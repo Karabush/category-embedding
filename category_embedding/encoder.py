@@ -318,6 +318,7 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
         """
         def focal_loss_fn(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
             y_pred = tf.clip_by_value(y_pred, 1e-7, 1.0 - 1e-7)
+
             # Standard BCE per sample
             bce = -(
                 y_true * tf.math.log(y_pred)
@@ -325,11 +326,14 @@ class CategoryEmbedding(BaseEstimator, TransformerMixin):
             )
             # p_t: probability of the true class
             p_t = y_true * y_pred + (1.0 - y_true) * (1.0 - y_pred)
+
             # Focal factor: (1 - p_t)^gamma suppresses easy examples
             focal_factor = tf.pow(1.0 - p_t, gamma)
-            return tf.reduce_mean(focal_factor * bce)
+
+            return tf.cast(tf.reduce_mean(focal_factor * bce), tf.float32)
 
         focal_loss_fn.__name__ = f"focal_loss_gamma_{gamma}"
+
         return focal_loss_fn
 
     def _residual_block(self, x: keras.Tensor, units: int, name_prefix: str) -> keras.Tensor:
